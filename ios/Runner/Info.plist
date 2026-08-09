@@ -26,6 +26,16 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SpideyTracker needs your location to share it live with your party and drop pins on the map.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SpideyTracker needs your location to share it live with your party and drop pins on the map.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SpideyTracker needs camera access so you can take a photo to attach to a pin.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SpideyTracker needs photo library access so you can attach existing photos to a pin.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SpideyTracker needs permission to save photos you download from a pin.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
