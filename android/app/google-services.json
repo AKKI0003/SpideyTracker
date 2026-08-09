@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "563438115838",
+    "project_id": "spidertack",
+    "storage_bucket": "spidertack.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:563438115838:android:84dbd539c4a13acbb4beaf",
+        "android_client_info": {
+          "package_name": "com.example.spidertrack"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDj6szhUIa4oUxtiLUAMqzjcExf__CAo7Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:563438115838:android:832dd09110f5bb3eb4beaf",
+        "android_client_info": {
+          "package_name": "com.yourname.spidertrack"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDj6szhUIa4oUxtiLUAMqzjcExf__CAo7Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

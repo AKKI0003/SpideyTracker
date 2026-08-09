@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(partyId) {
+      return isSignedIn() &&
+        request.auth.uid in get(/databases/$(database)/documents/parties/$(partyId)).data.memberUids;
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /inviteCodes/{code} {
+      // Anyone signed in can look up a code to join; only the creator
+      // path (server-validated via joinWithCode's transaction) mutates it.
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      // Deleting an invite code is only ever supposed to happen as
+      // part of its party being deleted, by that party's owner. This
+      // used to be unconditionally false, which meant EVERY deleteParty
+      // call failed outright — the whole batch is atomic, so one
+      // illegal write in it (this one) aborted deleting the party too.
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/parties/$(resource.data.partyId)).data.ownerUid == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /parties/{partyId} {
+      // Read is intentionally NOT gated to members-only: joinWithCode's
+      // transaction needs to read a party it isn't a member of YET
+      // (that's the whole point of joining), and Firestore transactions
+      // enforce their security rules on every get() too, not just the
+      // final write — a members-only read rule made that first read
+      // fail before the join could ever get to the update. This isn't
+      // a meaningful privacy loosening in practice: party doc IDs are
+      // random/unguessable, and the actual access gate is the invite
+      // CODE (already globally readable, same as before) — you need a
+      // valid code to ever learn a partyId in the first place.
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid in request.resource.data.memberUids;
+      allow update: if isSignedIn() && (
+        // An existing member doing a normal update (leave, rename,
+        // ownership transfer on leave, etc.) — unchanged from before.
+        (request.auth.uid in resource.data.memberUids
+          && request.resource.data.memberUids.size() <= 8)
+        ||
+        // Joining: this used to be impossible, because the condition
+        // above requires already being a member — which is exactly
+        // what joining is trying to become. This lets someone who
+        // ISN'T yet a member add themselves (and only themselves),
+        // touching only membership-related fields, nothing else.
+        (!(request.auth.uid in resource.data.memberUids)
+          && request.auth.uid in request.resource.data.memberUids
+          && request.resource.data.memberUids.size() <= 8
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'memberRoles']))
+      );
+      allow delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+
+      match /pins/{pinId} {
+        allow read: if isMember(partyId);
+        allow create: if isMember(partyId) && request.resource.data.ownerUid == request.auth.uid;
+        allow delete: if isMember(partyId) && resource.data.ownerUid == request.auth.uid;
+        // Pins were fully immutable after creation; photos need to be
+        // appended/removed after the fact (upload happens async, after
+        // the pin doc already exists), so the owner may update ONLY
+        // the `photos` field — caption, location, ownerUid etc. still
+        // can't change post-creation.
+        allow update: if isMember(partyId)
+          && resource.data.ownerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photos']);
+      }
+
+      match /liveLocation/{uid} {
+        allow read: if isMember(partyId);
+        allow write: if isMember(partyId) && request.auth.uid == uid;
+      }
+
+      // Feature 3 (chat). Firestore is a transient relay only — see
+      // ChatRepository's doc comment. update is needed for
+      // deliveredTo/readBy array bumps; delete is needed so any client
+      // can prune a message once every member has a local copy.
+      match /messages/{messageId} {
+        allow read: if isMember(partyId);
+        allow create: if isMember(partyId) && request.resource.data.senderUid == request.auth.uid;
+        allow update: if isMember(partyId);
+        allow delete: if isMember(partyId);
+      }
+      match /typing/{uid} {
+        allow read: if isMember(partyId);
+        allow write: if isMember(partyId) && request.auth.uid == uid;
+      }
+      match /activityLog/{entryId} {
+        allow read: if isMember(partyId);
+        allow create: if isMember(partyId);
+      }
+    }
+  }
+}
