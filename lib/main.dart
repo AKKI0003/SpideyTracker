@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -25,7 +26,19 @@ void main() async {
   // Registers this device's FCM token so Cloud Functions can push to
   // it; safe to call even if the user isn't signed in yet (it's a
   // no-op until they are — see PushNotificationService._registerToken).
-  await PushNotificationService.init();
+  //
+  // Wrapped defensively: push notifications are a nice-to-have, not
+  // something the rest of the app depends on. An unhandled exception
+  // here previously ran before runApp() and crashed the whole startup
+  // with a permanent white screen (see push_notification_service.dart
+  // for the actual root cause + fix) — this try/catch is a second
+  // layer of protection so no future failure in this subsystem can
+  // ever take the whole app down with it again.
+  try {
+    await PushNotificationService.init();
+  } catch (e, st) {
+    debugPrint('PushNotificationService.init() failed, continuing without push notifications: $e\n$st');
+  }
 
   runApp(const ProviderScope(child: SpiderTrackApp()));
 }
