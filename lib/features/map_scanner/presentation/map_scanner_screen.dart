@@ -39,6 +39,7 @@ import '../../../core/audio/voice_line_player.dart';
 import 'widgets/live_location_sheet.dart';
 import 'widgets/pin_filter_rail.dart';
 import '../../../core/utils/haptics.dart';
+import 'widgets/search_location_button.dart';
 
 
 /// A member's animated live-location state, tracked per-uid now that a
@@ -161,6 +162,11 @@ class _MapScannerScreenState extends State<MapScannerScreen>
 
   final Map<String, _MemberLiveState> _memberLive = {};
   final Set<String> _prevSharingUids = {};
+  // Whether ANYONE in the party was live as of the last snapshot — the
+  // link sound compares against this instead of per-person state, so
+  // it plays exactly once when the party goes from nobody-live to
+  // somebody-live, no matter how many people are involved.
+  bool _wasAnyoneLive = false;
 
   @override
   void initState() {
@@ -366,10 +372,6 @@ class _MapScannerScreenState extends State<MapScannerScreen>
           _animateMemberTo(uid, state, loc);
         }
 
-        final wasSharing = _prevSharingUids.contains(uid);
-        if (wasSharing != isSharing) {
-          _showLinkMessage(_memberNames[uid], isSharing);
-        }
         if (isSharing) {
           _prevSharingUids.add(uid);
         } else {
@@ -384,11 +386,22 @@ class _MapScannerScreenState extends State<MapScannerScreen>
       // results) should drop off the map too.
       _memberLive.removeWhere((uid, _) => !seenUids.contains(uid));
 
+      // Fires at most once per snapshot, based on whether ANYONE is
+      // live overall — not once per person. It used to fire per-uid, so
+      // with several members it could play multiple times back to back
+      // for a single snapshot, and kept re-firing any time one person
+      // toggled while others were already live.
+      final anyoneLiveNow = _prevSharingUids.isNotEmpty;
+      if (anyoneLiveNow != _wasAnyoneLive) {
+        _showLinkMessage(anyoneLiveNow);
+        _wasAnyoneLive = anyoneLiveNow;
+      }
+
       if (mounted) setState(() {});
     });
   }
 
-  void _showLinkMessage(String? memberName, bool connected) {
+  void _showLinkMessage(bool connected) {
     if (!mounted) return;
     final voice = ProviderScope.containerOf(context, listen: false).read(voiceLinePlayerProvider);
     voice.play(connected ? VoiceLine.linkEstablished : VoiceLine.signalLost);
@@ -1108,6 +1121,24 @@ class _MapScannerScreenState extends State<MapScannerScreen>
                         top: 12,
                         right: 78,
                         child: RepaintBoundary(child: SoundControlButton()),
+                      ),
+
+                      // Search icon — sits just left of the sound
+                      // control, same visual weight, only ever expands
+                      // into a field when tapped (never a permanent
+                      // bar sitting on top of the map's own labels).
+                      Positioned(
+                        top: 12,
+                        right: 140,
+                        child: SearchLocationButton(
+                          onLocationFound: (location, label) {
+                            _mapController.move(location, 15);
+                            Haptics.confirm();
+                            if (mounted) {
+                              showThemedSnack(context, label.toUpperCase(), tone: SnackTone.info);
+                            }
+                          },
+                        ),
                       ),
 
                       if (sharingMembers.isNotEmpty)
