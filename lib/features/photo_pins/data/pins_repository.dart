@@ -3,6 +3,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../domain/pin_model.dart';
 import '../../../core/storage/b2_upload_service.dart';
+import '../../../core/notifications/notify_trigger.dart';
 
 /// Pins live at parties/{partyId}/pins/{pinId} instead of a top-level
 /// 'pins' collection filtered by coupleId. This makes cross-party leakage
@@ -36,6 +37,12 @@ class PinsRepository {
       'createdAt': FieldValue.serverTimestamp(),
       'photos': <Map<String, dynamic>>[],
     });
+
+    // Fire-and-forget — never awaited/blocking, and swallows its own
+    // errors internally, so a flaky network or a down notify server
+    // never affects the pin the user is actually waiting to see appear.
+    NotifyTrigger.firePinCreated(partyId: partyId, actorUid: user.uid);
+
     return doc.id;
   }
 

@@ -488,6 +488,18 @@ class _PhotoPinViewerScreenState extends State<PhotoPinViewerScreen>
                       child: Image.network(
                         p.url,
                         fit: BoxFit.cover,
+                        // Was decoding the FULL original photo
+                        // resolution (often several thousand px from a
+                        // phone camera) just to show an 84x84 square —
+                        // on lower-RAM Android devices, a screen with
+                        // several of these thumbnails could easily push
+                        // memory into OOM-crash territory. Capping the
+                        // decode size to roughly what's actually shown
+                        // (with headroom for high-DPI screens) fixes
+                        // that with zero visible quality change, since
+                        // the display size never changes.
+                        cacheWidth: 250,
+                        cacheHeight: 250,
                         errorBuilder: (context, error, stack) {
                           debugPrint('Pin photo failed to load (${p.url}): $error');
                           return Container(
@@ -618,6 +630,16 @@ class _FullScreenPhotoViewState extends State<_FullScreenPhotoView> {
                     child: Image.network(
                       p.url,
                       fit: BoxFit.contain,
+                      // This view supports up to 5x pinch-zoom, so it
+                      // genuinely needs a much higher-res decode than
+                      // the grid thumbnails — but the raw original from
+                      // a phone camera (often 3000-4000px+) is still far
+                      // more than any phone screen at 5x zoom can
+                      // actually resolve. Capping at 2400px (long edge,
+                      // aspect ratio preserved automatically since only
+                      // width is set) keeps zoom quality indistinguishable
+                      // from uncapped while cutting memory substantially.
+                      cacheWidth: 2400,
                       errorBuilder: (context, error, stack) => const Icon(
                           Icons.broken_image, color: Colors.white38, size: 40),
                       loadingBuilder: (context, child, progress) {

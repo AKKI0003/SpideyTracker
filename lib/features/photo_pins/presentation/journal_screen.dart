@@ -58,8 +58,15 @@ class _JournalScreenState extends State<JournalScreen> {
       final missingUids = ownerUids.where((uid) => !_memberNames.containsKey(uid)).toList();
 
       if (missingUids.isNotEmpty) {
-        for (final uid in missingUids) {
-          final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        // Fetched in parallel rather than one at a time — with up to 8
+        // party members this could otherwise mean 8 sequential
+        // round-trips before the journal even finishes loading.
+        final docs = await Future.wait(
+          missingUids.map((uid) => FirebaseFirestore.instance.collection('users').doc(uid).get()),
+        );
+        for (int i = 0; i < missingUids.length; i++) {
+          final uid = missingUids[i];
+          final doc = docs[i];
           _memberNames[uid] = uid == _myUid ? 'You' : (doc.data()?['displayName'] as String? ?? 'Member');
           _memberMaskIds[uid] = doc.data()?['maskId'] as String? ?? 'spiderman';
         }
@@ -372,6 +379,16 @@ class _JournalTileState extends State<_JournalTile> with SingleTickerProviderSta
                 Image.network(
                   photo.url,
                   fit: BoxFit.cover,
+                  // Same reasoning as the pin photo grid: this tile is
+                  // roughly a third of the screen width, not the
+                  // original camera resolution. With a journal
+                  // potentially showing dozens of these at once, this
+                  // was very likely the actual cause of crashes on
+                  // lower-RAM Android devices — each uncapped decode
+                  // could be tens of MB in memory, and they all add up
+                  // simultaneously in a grid.
+                  cacheWidth: 250,
+                  cacheHeight: 250,
                   loadingBuilder: (context, child, progress) =>
                       progress == null ? child! : const Center(child: LoadingSpiderBlink(size: 28)),
                   errorBuilder: (context, error, stack) => Container(

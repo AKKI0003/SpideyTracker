@@ -4,6 +4,7 @@ import 'package:cryptography/cryptography.dart';
 import '../../../core/chat/party_key_service.dart';
 import '../../../core/chat/message_crypto.dart';
 import '../../../core/chat/local_chat_store.dart';
+import '../../../core/notifications/notify_trigger.dart';
 import '../domain/chat_message.dart';
 
 /// Firestore's messages subcollection is a TRANSIENT RELAY, not
@@ -55,6 +56,11 @@ class ChatRepository {
       'deliveredTo': <String>[senderUid], // sender already "has" it locally
       'readBy': <String>[senderUid],
     });
+
+    // Fire-and-forget, same as pin creation — never blocks sending,
+    // and the notify server only ever receives partyId + senderUid,
+    // never the message text (which is why it's encrypted at all).
+    NotifyTrigger.fireMessageCreated(partyId: partyId, actorUid: senderUid);
 
     // Sender also saves their own plaintext locally immediately, rather
     // than waiting on the round-trip.

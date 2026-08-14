@@ -305,7 +305,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     style: const TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                   const SizedBox(width: 6),
-                  const TypingDots(),
+                  const RepaintBoundary(child: TypingDots()),
                 ],
               ),
             ),
