@@ -10,6 +10,7 @@ import '../../map_scanner/presentation/widgets/grid_overlay.dart';
 import '../../map_scanner/presentation/widgets/scan_lines_overlay.dart';
 import '../../map_scanner/presentation/widgets/loading_spider_blink.dart';
 import '../../map_scanner/presentation/widgets/spider_mask_icon.dart';
+import 'widgets/self_healing_pin_image.dart';
 
 /// One flattened (pin, photo) pair — a pin with 3 photos produces 3
 /// entries here, one per photo, so the grid is a feed of individual
@@ -136,6 +137,7 @@ class _JournalScreenState extends State<JournalScreen> {
                       : entries.isEmpty
                           ? const _EmptyJournal()
                           : _JournalGrid(
+                              partyId: widget.partyId,
                               entries: entries,
                               dateHeaderFor: _dateHeaderFor,
                               onTapEntry: _openViewer,
@@ -240,12 +242,14 @@ class _EmptyJournal extends StatelessWidget {
 }
 
 class _JournalGrid extends StatelessWidget {
+  final String partyId;
   final List<_JournalEntry> entries;
   final String Function(DateTime) dateHeaderFor;
   final void Function(PinModel pin) onTapEntry;
   final Map<String, String> memberMaskIds;
 
   const _JournalGrid({
+    required this.partyId,
     required this.entries,
     required this.dateHeaderFor,
     required this.onTapEntry,
@@ -297,6 +301,7 @@ class _JournalGrid extends StatelessWidget {
                 // the whole grid doesn't animate in one flat wave.
                 final globalIndex = entries.indexOf(entry);
                 return _JournalTile(
+                  partyId: partyId,
                   entry: entry,
                   delay: Duration(milliseconds: 25 * (globalIndex % 12)),
                   onTap: () => onTapEntry(entry.pin),
@@ -312,12 +317,14 @@ class _JournalGrid extends StatelessWidget {
 }
 
 class _JournalTile extends StatefulWidget {
+  final String partyId;
   final _JournalEntry entry;
   final Duration delay;
   final VoidCallback onTap;
   final String? ownerMaskId;
 
   const _JournalTile({
+    required this.partyId,
     required this.entry,
     required this.delay,
     required this.onTap,
@@ -376,8 +383,14 @@ class _JournalTileState extends State<_JournalTile> with SingleTickerProviderSta
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(
-                  photo.url,
+                // SelfHealingPinImage (not a plain Image.network) so
+                // photos with an expiring/expired B2 signed URL quietly
+                // re-sign themselves instead of turning into a
+                // permanent broken-image icon.
+                SelfHealingPinImage(
+                  partyId: widget.partyId,
+                  pinId: pin.id,
+                  photo: photo,
                   fit: BoxFit.cover,
                   // Same reasoning as the pin photo grid: this tile is
                   // roughly a third of the screen width, not the
@@ -389,14 +402,8 @@ class _JournalTileState extends State<_JournalTile> with SingleTickerProviderSta
                   // simultaneously in a grid.
                   cacheWidth: 250,
                   cacheHeight: 250,
-                  loadingBuilder: (context, child, progress) =>
-                      progress == null ? child! : const Center(child: LoadingSpiderBlink(size: 28)),
-                  errorBuilder: (context, error, stack) => Container(
-                    color: Colors.black26,
-                    child: const Icon(Icons.broken_image, color: Colors.white24, size: 20),
-                  ),
-                ),
-                // Bottom gradient + caption, Instagram-grid-style — a
+                  loadingPlaceholder: (context) => const Center(child: LoadingSpiderBlink(size: 28)),
+                ),                // Bottom gradient + caption, Instagram-grid-style — a
                 // quick reminder of what the memory was about without
                 // needing to open it.
                 if (pin.caption.isNotEmpty)

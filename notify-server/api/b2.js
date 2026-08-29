@@ -12,10 +12,11 @@
  *
  * The bucket is PRIVATE (per the setup guide), so this also returns a
  * signed *download* URL at upload time, valid 7 days, stored directly
- * on the PinPhoto — simplest thing that works today. If you want
- * photos to stay viewable indefinitely, the future step is adding a
- * "refresh" action here that re-signs a GET URL for an existing
- * objectKey; not needed for a first working version.
+ * on the PinPhoto. A "refresh" action re-signs a GET URL for an
+ * existing objectKey — the client calls it proactively before a
+ * photo's link gets close to expiring (see SelfHealingPinImage), so
+ * photos stay viewable indefinitely instead of turning into a broken-
+ * image icon after a week.
  *
  * Deploy: vercel --prod   (same project as notify.js — see README.md)
  *
@@ -55,6 +56,14 @@
  *     Body: { "action": "delete", "partyId": "...", "pinId": "...",
  *              "objectKey": "parties/.../pins/.../<uuid>.jpg" }
  *     Response: { "ok": true }
+ *
+ *   Refresh (re-signs a GET url for a photo whose 7-day link is about
+ *   to expire or already has — this is the "future step" mentioned
+ *   above, now implemented since photos were going broken after a
+ *   week):
+ *     Body: { "action": "refresh", "partyId": "...", "pinId": "...",
+ *              "objectKey": "parties/.../pins/.../<uuid>.jpg" }
+ *     Response: { "downloadUrl": "..." }
  */
 const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
@@ -217,6 +226,28 @@ async function handleDelete(req, uid) {
   return { ok: true };
 }
 
+async function handleRefresh(req, uid) {
+  const { partyId, pinId, objectKey } = req.body || {};
+  if (!partyId || !pinId || !objectKey) {
+    throw { status: 400, message: 'partyId, pinId and objectKey are required' };
+  }
+  if (!objectKey.startsWith(`parties/${partyId}/pins/${pinId}/`)) {
+    throw { status: 400, message: 'objectKey does not match partyId/pinId' };
+  }
+  await requireMember(partyId, uid);
+
+  const downloadUrl = await getSignedUrl(
+    s3,
+    new GetObjectCommand({
+      Bucket: process.env.B2_BUCKET,
+      Key: objectKey,
+    }),
+    { expiresIn: SEVEN_DAYS_SECONDS }
+  );
+
+  return { downloadUrl };
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -236,8 +267,10 @@ module.exports = async (req, res) => {
       res.status(200).json(await handleUpload(req, uid));
     } else if (action === 'delete') {
       res.status(200).json(await handleDelete(req, uid));
+    } else if (action === 'refresh') {
+      res.status(200).json(await handleRefresh(req, uid));
     } else {
-      res.status(400).json({ error: 'action must be "upload" or "delete"' });
+      res.status(400).json({ error: 'action must be "upload", "delete" or "refresh"' });
     }
   } catch (err) {
     const status = err.status || 500;

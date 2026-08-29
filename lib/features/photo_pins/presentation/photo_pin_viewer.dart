@@ -12,6 +12,7 @@ import '../../../core/storage/b2_upload_service.dart';
 import '../../../core/widgets/location_tag_chip.dart';
 import '../../map_scanner/presentation/widgets/loading_spider_blink.dart';
 import 'add_photos_sheet.dart';
+import 'widgets/self_healing_pin_image.dart';
 
 /// Opens the pin photo viewer: a pixel-art Spider figure drops in
 /// upside-down on a web strand, then holds open a comic-panel frame
@@ -164,6 +165,8 @@ class _PhotoPinViewerScreenState extends State<PhotoPinViewerScreen>
         pageBuilder: (context, animation, secondaryAnimation) => FadeTransition(
           opacity: animation,
           child: _FullScreenPhotoView(
+            partyId: widget.partyId,
+            pinId: widget.pin.id,
             photos: _photos,
             initialIndex: index,
             isMine: widget.isMine,
@@ -485,35 +488,32 @@ class _PhotoPinViewerScreenState extends State<PhotoPinViewerScreen>
                     child: SizedBox(
                       width: 84,
                       height: 84,
-                      child: Image.network(
-                        p.url,
+                      // Was decoding the FULL original photo resolution
+                      // (often several thousand px from a phone camera)
+                      // just to show an 84x84 square — on lower-RAM
+                      // Android devices, a screen with several of these
+                      // thumbnails could easily push memory into
+                      // OOM-crash territory. Capping the decode size to
+                      // roughly what's actually shown (with headroom
+                      // for high-DPI screens) fixes that with zero
+                      // visible quality change, since the display size
+                      // never changes.
+                      //
+                      // SelfHealingPinImage (not a plain Image.network)
+                      // so photos with an expiring/expired B2 signed
+                      // URL quietly re-sign themselves instead of
+                      // turning into a permanent broken-image icon.
+                      child: SelfHealingPinImage(
+                        partyId: widget.partyId,
+                        pinId: widget.pin.id,
+                        photo: p,
                         fit: BoxFit.cover,
-                        // Was decoding the FULL original photo
-                        // resolution (often several thousand px from a
-                        // phone camera) just to show an 84x84 square —
-                        // on lower-RAM Android devices, a screen with
-                        // several of these thumbnails could easily push
-                        // memory into OOM-crash territory. Capping the
-                        // decode size to roughly what's actually shown
-                        // (with headroom for high-DPI screens) fixes
-                        // that with zero visible quality change, since
-                        // the display size never changes.
                         cacheWidth: 250,
                         cacheHeight: 250,
-                        errorBuilder: (context, error, stack) {
-                          debugPrint('Pin photo failed to load (${p.url}): $error');
-                          return Container(
-                            color: Colors.black26,
-                            child: const Icon(Icons.broken_image, color: Colors.white38, size: 18),
-                          );
-                        },
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return const ColoredBox(
-                            color: Colors.black26,
-                            child: Center(child: LoadingSpiderBlink(size: 30)),
-                          );
-                        },
+                        loadingPlaceholder: (context) => const ColoredBox(
+                          color: Colors.black26,
+                          child: Center(child: LoadingSpiderBlink(size: 30)),
+                        ),
                       ),
                     ),
                   ),
@@ -542,6 +542,8 @@ class _PhotoPinViewerScreenState extends State<PhotoPinViewerScreen>
 }
 
 class _FullScreenPhotoView extends StatefulWidget {
+  final String partyId;
+  final String pinId;
   final List<PinPhoto> photos;
   final int initialIndex;
   final bool isMine;
@@ -552,6 +554,8 @@ class _FullScreenPhotoView extends StatefulWidget {
   final Future<List<PinPhoto>> Function(PinPhoto photo) onDelete;
 
   const _FullScreenPhotoView({
+    required this.partyId,
+    required this.pinId,
     required this.photos,
     required this.initialIndex,
     required this.isMine,
@@ -627,8 +631,14 @@ class _FullScreenPhotoViewState extends State<_FullScreenPhotoView> {
                   minScale: 1,
                   maxScale: 5,
                   child: Center(
-                    child: Image.network(
-                      p.url,
+                    // SelfHealingPinImage (not a plain Image.network) so
+                    // photos with an expiring/expired B2 signed URL
+                    // quietly re-sign themselves instead of turning into
+                    // a permanent broken-image icon.
+                    child: SelfHealingPinImage(
+                      partyId: widget.partyId,
+                      pinId: widget.pinId,
+                      photo: p,
                       fit: BoxFit.contain,
                       // This view supports up to 5x pinch-zoom, so it
                       // genuinely needs a much higher-res decode than
@@ -640,12 +650,8 @@ class _FullScreenPhotoViewState extends State<_FullScreenPhotoView> {
                       // width is set) keeps zoom quality indistinguishable
                       // from uncapped while cutting memory substantially.
                       cacheWidth: 2400,
-                      errorBuilder: (context, error, stack) => const Icon(
-                          Icons.broken_image, color: Colors.white38, size: 40),
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return const Center(child: LoadingSpiderBlink(size: 48));
-                      },
+                      loadingPlaceholder: (context) =>
+                          const Center(child: LoadingSpiderBlink(size: 48)),
                     ),
                   ),
                 );

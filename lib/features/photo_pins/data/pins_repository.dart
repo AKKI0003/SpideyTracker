@@ -65,6 +65,37 @@ class PinsRepository {
     });
   }
 
+  /// Replaces one photo's url/signedAt in-place in the pin's `photos`
+  /// array — used by SelfHealingPinImage after re-signing a fresh
+  /// download URL, so every future viewer benefits from the refresh
+  /// too, not just whoever happened to trigger it. A transaction
+  /// (rather than arrayRemove+arrayUnion) since two viewers could
+  /// plausibly refresh the same stale photo around the same time, and
+  /// arrayUnion/arrayRemove needs an exact map match that a race could
+  /// break.
+  Future<void> updatePhotoUrl({
+    required String partyId,
+    required String pinId,
+    required String photoId,
+    required String newUrl,
+    required DateTime newSignedAt,
+  }) async {
+    final ref = _pinsRef(partyId).doc(pinId);
+    await _firestore.runTransaction((tx) async {
+      final doc = await tx.get(ref);
+      final rawPhotos = (doc.data()?['photos'] as List?) ?? [];
+      final updated = rawPhotos.map((p) {
+        final map = Map<String, dynamic>.from(p as Map);
+        if (map['id'] == photoId) {
+          map['url'] = newUrl;
+          map['signedAt'] = Timestamp.fromDate(newSignedAt);
+        }
+        return map;
+      }).toList();
+      tx.update(ref, {'photos': updated});
+    });
+  }
+
   /// Removes one photo from a pin's `photos` array. Firestore's
   /// arrayRemove needs the exact same map that's stored, so this reads
   /// the doc first and matches by photo id rather than trying to

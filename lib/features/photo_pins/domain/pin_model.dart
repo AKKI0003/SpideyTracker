@@ -6,6 +6,9 @@ import 'package:latlong2/latlong.dart';
 /// notify-server/api/b2.js) valid 7 days from upload; [objectKey] is
 /// the permanent B2 path, kept around so a photo can be deleted or a
 /// fresh signed URL re-issued later without needing anything else.
+/// [signedAt] records when [url] was actually signed, so the app can
+/// tell a link is getting close to its 7-day expiry and quietly
+/// re-sign it before it ever actually breaks — see SelfHealingPinImage.
 ///
 /// [width]/[height] are the original pixel dimensions, read client-side
 /// before upload — the photo viewer uses these to size its frame to
@@ -16,6 +19,7 @@ class PinPhoto {
   final String objectKey;
   final String caption;
   final DateTime? uploadedAt;
+  final DateTime? signedAt;
   final String uploadedByUid;
   final double width;
   final double height;
@@ -26,6 +30,7 @@ class PinPhoto {
     required this.objectKey,
     required this.caption,
     required this.uploadedAt,
+    this.signedAt,
     required this.uploadedByUid,
     required this.width,
     required this.height,
@@ -40,6 +45,11 @@ class PinPhoto {
       objectKey: map['objectKey'] as String,
       caption: map['caption'] as String? ?? '',
       uploadedAt: (map['uploadedAt'] as Timestamp?)?.toDate(),
+      // Absent on photos uploaded before this field existed — treated
+      // as "unknown age" by SelfHealingPinImage, which then falls back
+      // to its reactive (on-load-error) refresh path instead of a
+      // proactive one for those.
+      signedAt: (map['signedAt'] as Timestamp?)?.toDate(),
       uploadedByUid: map['uploadedByUid'] as String? ?? '',
       width: (map['width'] as num?)?.toDouble() ?? 1,
       height: (map['height'] as num?)?.toDouble() ?? 1,
@@ -56,10 +66,25 @@ class PinPhoto {
       // so the caller stamps a real client DateTime before this goes
       // into an arrayUnion() — see PinsRepository.addPhotoToPin.
       'uploadedAt': uploadedAt != null ? Timestamp.fromDate(uploadedAt!) : null,
+      'signedAt': signedAt != null ? Timestamp.fromDate(signedAt!) : null,
       'uploadedByUid': uploadedByUid,
       'width': width,
       'height': height,
     };
+  }
+
+  PinPhoto copyWith({String? url, DateTime? signedAt}) {
+    return PinPhoto(
+      id: id,
+      url: url ?? this.url,
+      objectKey: objectKey,
+      caption: caption,
+      uploadedAt: uploadedAt,
+      signedAt: signedAt ?? this.signedAt,
+      uploadedByUid: uploadedByUid,
+      width: width,
+      height: height,
+    );
   }
 }
 

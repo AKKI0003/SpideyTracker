@@ -11,6 +11,8 @@ import '../../../core/widgets/corner_web_painter.dart';
 import 'widgets/chat_bubble.dart';
 import 'widgets/date_separator.dart';
 import 'widgets/typing_dots.dart';
+import '../../../core/widgets/themed_dialog.dart';
+import '../../../core/widgets/themed_snackbar.dart';
 
 /// Feature 3 - Chat.
 ///
@@ -160,6 +162,30 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Chat history only ever lives on-device (see LocalChatStore's own
+  /// docs — messages are decrypted client-side and the Firestore copy
+  /// is transient/self-pruning), so "clear chat" is inherently a
+  /// per-device action: it wipes what's stored on THIS phone only, not
+  /// for other party members, since there's no shared copy to delete
+  /// in the first place. The confirm dialog says this explicitly so it
+  /// doesn't read as "delete for everyone".
+  Future<void> _handleClearChat() async {
+    final confirmed = await showThemedConfirmDialog(
+      context,
+      title: 'CLEAR CHAT?',
+      message:
+          'This clears chat history stored on this device only. Other members keep their own copy — this can\'t be undone on this device.',
+      confirmLabel: 'CLEAR',
+    );
+    if (!confirmed) return;
+
+    await LocalChatStore.clearParty(widget.partyId);
+    if (mounted) {
+      setState(() => _messages.clear());
+      showThemedSnack(context, 'Chat history cleared on this device', tone: SnackTone.success);
+    }
+  }
+
   @override
   void dispose() {
     _syncSub?.cancel();
@@ -230,6 +256,28 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.cyanAccent),
+            color: const Color(0xFF0A1128),
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(color: Colors.cyanAccent, width: 1.5),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            onSelected: (value) {
+              if (value == 'clear') _handleClearChat();
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'clear',
+                child: Text(
+                  'CLEAR CHAT',
+                  style: GoogleFonts.pressStart2p(fontSize: 8, color: Colors.redAccent),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Stack(
         children: [

@@ -111,6 +111,7 @@ class _AddPhotosSheetState extends State<_AddPhotosSheet> {
           objectKey: result.objectKey,
           caption: p.caption,
           uploadedAt: DateTime.now(),
+          signedAt: DateTime.now(),
           uploadedByUid: uid,
           width: result.width,
           height: result.height,

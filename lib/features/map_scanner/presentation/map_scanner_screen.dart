@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart' as vt;
+import 'dart:io';
 import '../../settings/presentation/mask_picker_sheet.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -51,6 +53,12 @@ class _MemberLiveState {
   Animation<double>? latAnim;
   Animation<double>? lngAnim;
   final AnimationController controller;
+  // When this member's last location write actually happened (server
+  // time, not device time — avoids any clock-skew weirdness). Used by
+  // the staleness check in _loadParty: if too much time passes with no
+  // new write, we stop trusting `sharing` even though Firestore's own
+  // sharingEnabled flag is still true — see that check for why.
+  DateTime? lastUpdated;
 
   _MemberLiveState(this.controller);
 }
@@ -97,6 +105,15 @@ class _PositionedItem {
   final LatLng displayLocation;
   const _PositionedItem(this.item, this.displayLocation);
 }
+
+/// OpenFreeMap's Positron style — free forever, no key, no signup, no
+/// request limits, and it's the same pale/grey cartography Carto's
+/// light_all used, so switching doesn't change how the map looks.
+/// Unlike the Carto key workaround, this also has no zoom-range gap
+/// (Carto's light_all only serves z0–20 even with a key, so extreme
+/// zoom still showed the watermark on out-of-range tiles).
+const String _openFreeMapPositronStyleUrl =
+    'https://tiles.openfreemap.org/styles/positron';
 
 class MapScannerScreen extends StatefulWidget {
   final String partyId;
@@ -168,12 +185,35 @@ class _MapScannerScreenState extends State<MapScannerScreen>
   // somebody-live, no matter how many people are involved.
   bool _wasAnyoneLive = false;
 
+  // Bug fix: a member's live pin used to stay marked "live" forever
+  // once their app stopped actually sending updates (backgrounded,
+  // killed, lost network, etc.) — Firestore's own `sharingEnabled` flag
+  // stays true since nothing ever explicitly turned it off, and since
+  // nothing changed there's no new snapshot event to react to either,
+  // so the UI just froze at their last position while still showing
+  // the pulsing "live" indicator forever. This timer re-checks
+  // freshness on its own schedule instead of waiting for a snapshot
+  // that will never come, so a stalled member correctly drops out of
+  // "live" after a short grace period even though no one ever tapped
+  // the LIVE button off.
+  Timer? _staleCheckTimer;
+  static const _staleAfter = Duration(seconds: 90);
+
+  // Loaded once and reused for every rebuild — re-fetching/parsing the
+  // style.json on every build would be wasteful and would also flash
+  // the map blank on each rebuild while it re-reads.
+  vt.Style? _mapStyle;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _getCurrentLocation();
     _loadParty();
+    _staleCheckTimer = Timer.periodic(const Duration(seconds: 20), (_) => _dropStaleMembers());
+    vt.StyleReader(uri: _openFreeMapPositronStyleUrl).read().then((style) {
+      if (mounted) setState(() => _mapStyle = style);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future.delayed(const Duration(milliseconds: 400));
       if (mounted) {
@@ -184,9 +224,37 @@ class _MapScannerScreenState extends State<MapScannerScreen>
     });
   }
 
+  void _dropStaleMembers() {
+    if (!mounted) return;
+    final now = DateTime.now();
+    var changed = false;
+
+    for (final entry in _memberLive.entries) {
+      final state = entry.value;
+      if (!state.sharing) continue;
+      final lastUpdated = state.lastUpdated;
+      if (lastUpdated != null && now.difference(lastUpdated) > _staleAfter) {
+        state.sharing = false;
+        state.displayLocation = null;
+        _prevSharingUids.remove(entry.key);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      final anyoneLiveNow = _prevSharingUids.isNotEmpty;
+      if (anyoneLiveNow != _wasAnyoneLive) {
+        _showLinkMessage(anyoneLiveNow);
+        _wasAnyoneLive = anyoneLiveNow;
+      }
+      setState(() {});
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _staleCheckTimer?.cancel();
     _positionSub?.cancel();
     _membersLocSub?.cancel();
     _pinsSub?.cancel();
@@ -197,6 +265,7 @@ class _MapScannerScreenState extends State<MapScannerScreen>
     for (final state in _memberLive.values) {
       state.controller.dispose();
     }
+    _mapStyle?.dispose();
     super.dispose();
   }
 
@@ -371,6 +440,13 @@ class _MapScannerScreenState extends State<MapScannerScreen>
           );
           _animateMemberTo(uid, state, loc);
         }
+
+        // `lastUpdated` can briefly be null right after a write, before
+        // the server timestamp round-trips back — treat that as "just
+        // happened" rather than "unknown/stale" so a person doesn't
+        // flicker to not-live for a moment every time they move.
+        final serverTime = (data['lastUpdated'] as Timestamp?)?.toDate();
+        state.lastUpdated = serverTime ?? DateTime.now();
 
         if (isSharing) {
           _prevSharingUids.add(uid);
@@ -604,6 +680,23 @@ class _MapScannerScreenState extends State<MapScannerScreen>
             .play(VoiceLine.liveOff);
       }
     } else {
+      // "Live" is supposed to mean live until YOU turn it off — not
+      // "live until you switch apps." That requires location updates
+      // to keep flowing while backgrounded, which needs the OS's
+      // "Always" location permission rather than just "While Using the
+      // App" (the latter is paused by the OS the moment the app isn't
+      // in the foreground, which is exactly what caused the stuck-pin
+      // bug). This upgrades the request; if the person only grants
+      // While-Using anyway, sharing still works fine in the
+      // foreground/briefly backgrounded — it just won't survive being
+      // backgrounded for long or the app being force-closed, and the
+      // staleness check in _dropStaleMembers() makes sure viewers see
+      // that honestly instead of a pin frozen in place forever.
+      final current = await Geolocator.checkPermission();
+      if (current == LocationPermission.whileInUse) {
+        await Geolocator.requestPermission(); // re-prompts asking to upgrade to Always, on platforms that support it
+      }
+
       setState(() => _isSharingLive = true);
       if (mounted) {
         ProviderScope.containerOf(context, listen: false)
@@ -611,10 +704,43 @@ class _MapScannerScreenState extends State<MapScannerScreen>
             .play(VoiceLine.liveOn);
       }
       _positionSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 10,
-        ),
+        locationSettings: Platform.isIOS
+            ? AppleSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 10,
+                activityType: ActivityType.other,
+                // Without these two, iOS pauses updates automatically
+                // once it decides the phone doesn't seem to be moving
+                // and/or the app goes to the background — which is
+                // exactly how the pin ended up stuck at the last known
+                // spot while still showing as "live" upstream.
+                pauseLocationUpdatesAutomatically: false,
+                allowBackgroundLocationUpdates: true,
+                // Required by Apple whenever an app uses location in
+                // the background — shows the blue "app is using your
+                // location" bar. This is expected, standard UX for any
+                // legitimate background-location app, not a bug.
+                showBackgroundLocationIndicator: true,
+              )
+            : AndroidSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 10,
+                intervalDuration: const Duration(seconds: 10),
+                // Modern Android requires a visible foreground-service
+                // notification for any app that keeps requesting
+                // location updates while backgrounded — without one,
+                // the OS suspends location callbacks within
+                // seconds-to-minutes of the app leaving the
+                // foreground, which is the other half of why this was
+                // getting stuck. See the note in this repo's
+                // README/AndroidManifest about the extra permissions
+                // this needs declared there.
+                foregroundNotificationConfig: const ForegroundNotificationConfig(
+                  notificationTitle: 'SpideyTracker',
+                  notificationText: 'Sharing your live location with your party',
+                  enableWakeLock: true,
+                ),
+              ),
       ).listen((pos) {
         _liveRepo.updateLocation(
           partyId: widget.partyId,
@@ -754,6 +880,12 @@ class _MapScannerScreenState extends State<MapScannerScreen>
                 }
               },
             ),
+            const SizedBox(height: 18),
+            Text(
+              'SPIDEYTRACKER — MADE BY AAKARSHAN',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.pressStart2p(fontSize: 6, color: Colors.white24),
+            ),
           ],
         ),
       ),
@@ -873,6 +1005,19 @@ class _MapScannerScreenState extends State<MapScannerScreen>
                           options: MapOptions(
                             initialCenter: _currentPosition!,
                             initialZoom: 16,
+                            // OpenFreeMap's Positron tiles only exist up to
+                            // z14 natively (they're over-zoomed by the
+                            // client past that) and the vector decoder
+                            // starts struggling with the flood of tile
+                            // requests a fast pinch fires once you're near
+                            // the edges of that range — that's what was
+                            // showing up as shaking/duplicated pins and,
+                            // on a slower phone, an outright crash.
+                            // Clamping the range keeps every zoom level
+                            // inside what the source and decoder can
+                            // actually keep up with.
+                            minZoom: 3,
+                            maxZoom: 19,
                             onTap: (tapPosition, point) =>
                                 _handleMapTap(point),
                             onMapReady: () {
@@ -883,13 +1028,38 @@ class _MapScannerScreenState extends State<MapScannerScreen>
                             },
                           ),
                           children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-                              subdomains: const ['a', 'b', 'c', 'd'],
-                              userAgentPackageName:
-                                  'com.yourname.spidertrack',
-                            ),
+                            if (_mapStyle == null)
+                              Container(color: const Color(0xFFE8E8E8)),
+                            if (_mapStyle != null)
+                              vt.VectorTileLayer(
+                                theme: _mapStyle!.theme,
+                                tileProviders: _mapStyle!.providers,
+                                sprites: _mapStyle!.sprites,
+                                // Fewer tiles being decoded in parallel
+                                // during a fast zoom burst is the actual
+                                // fix for the crash/shake — the isolate
+                                // pool was getting flooded on rapid
+                                // pinch gestures. Small memory + disk
+                                // caches mean a tile that was already
+                                // decoded once (e.g. zooming back out to
+                                // where you just were) doesn't have to
+                                // be redecoded, which is most of what
+                                // made zoom feel laggy in the first
+                                // place. tileFadeDuration is the actual
+                                // "smooth zoom" — new tiles cross-fade in
+                                // instead of popping, and the old tile
+                                // keeps rendering underneath until the
+                                // new one's ready instead of flashing a
+                                // gap (which is what read as "duplicate
+                                // pins" — markers over a half-drawn tile
+                                // grid mid-swap).
+                                concurrency: 2,
+                                memoryCacheMaxBytes: 16 * 1024 * 1024,
+                                diskCacheMaximumSizeInBytes: 30 * 1024 * 1024,
+                                diskCacheTtl: const Duration(days: 14),
+                                tileFadeDuration:
+                                    const Duration(milliseconds: 200),
+                              ),
                             IgnorePointer(
                               child: Container(
                                 color: const Color(0xFF1B3A8F).withOpacity(0.735),
@@ -1273,7 +1443,15 @@ class _MapScannerScreenState extends State<MapScannerScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 4),
+              Text(
+                'made by aakarshan',
+                style: GoogleFonts.pressStart2p(
+                  fontSize: 5,
+                  color: Colors.white.withOpacity(0.12),
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         ),

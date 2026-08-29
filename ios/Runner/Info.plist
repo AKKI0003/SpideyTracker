@@ -38,6 +38,10 @@
 	<string>SpideyTracker needs photo library access so you can attach existing photos to a pin.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>SpideyTracker needs permission to save photos you download from a pin.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

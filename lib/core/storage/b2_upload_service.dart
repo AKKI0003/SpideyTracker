@@ -89,6 +89,36 @@ class B2UploadService {
     );
   }
 
+  /// Re-signs a GET url for an existing photo — call this before a
+  /// photo's 7-day-old link actually expires (see SelfHealingPinImage),
+  /// which is what keeps photos viewable indefinitely instead of
+  /// eventually turning into a broken-image icon.
+  static Future<String> refreshDownloadUrl({
+    required String partyId,
+    required String pinId,
+    required String objectKey,
+  }) async {
+    final token = await _idToken();
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api/b2'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'action': 'refresh',
+        'partyId': partyId,
+        'pinId': pinId,
+        'objectKey': objectKey,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Refresh failed: ${response.body}');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['downloadUrl'] as String;
+  }
+
   /// Deletes a single photo's underlying B2 object. Caller is
   /// responsible for also removing it from the pin's Firestore
   /// `photos` array (see PinsRepository.deletePhotoFromPin) — this
