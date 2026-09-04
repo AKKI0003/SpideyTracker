@@ -48,8 +48,7 @@ The same screens from the main page, for reference while you read.
 
 | Pick Your Mask |
 |---|
-
- |<img width="304" alt="Encrypted chat screen" src="https://github.com/user-attachments/assets/1b0bba06-49bf-4f98-a91d-2862c24b936a">|
+|<img width="304" alt="Encrypted chat screen" src="https://github.com/user-attachments/assets/1b0bba06-49bf-4f98-a91d-2862c24b936a">|
 
 ---
 
