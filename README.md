@@ -44,12 +44,12 @@ The same screens from the main page, for reference while you read.
 
 | Photo Pins | Encrypted Chat |
 |---|---|
-| <img width="304" alt="Photo pins screen" src="https://github.com/user-attachments/assets/60f7b12f-aa17-45df-b80c-63e61939bcc6"> | <img width="304" alt="Encrypted chat screen" src="https://github.com/user-attachments/assets/1b0bba06-49bf-4f98-a91d-2862c24b936a"> |
+|  <img width="304" alt="Map screen" src="https://github.com/user-attachments/assets/32c42a41-449c-4770-9004-d1b3090239b6"> | <img width="304" alt="Encrypted chat screen" src="https://github.com/user-attachments/assets/1b0bba06-49bf-4f98-a91d-2862c24b936a"> |
 
-|**Pick Your Mask**|
+| Pick Your Mask |
 |---|
 
-<img width="304" alt="Mask selection screen" src="https://github.com/user-attachments/assets/af68301d-d80a-464e-ad00-e348f6685a20">
+ |<img width="304" alt="Encrypted chat screen" src="https://github.com/user-attachments/assets/1b0bba06-49bf-4f98-a91d-2862c24b936a">|
 
 ---
 
