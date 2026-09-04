@@ -40,7 +40,7 @@ The same screens from the main page, for reference while you read.
 
 | Sign In | The Map |
 |---|---|
-| <img width="304" alt="Mask selection screen" src="https://github.com/user-attachments/assets/af68301d-d80a-464e-ad00-e348f6685a20"> | <img width="304" alt="Map screen" src="https://github.com/user-attachments/assets/32c42a41-449c-4770-9004-d1b3090239b6"> |
+| <img width="304" alt="Mask selection screen" src="https://github.com/user-attachments/assets/af68301d-d80a-464e-ad00-e348f6685a20"> | <img width="304" alt="Sign in screen" src="https://github.com/user-attachments/assets/a119f7a2-cedc-4ff5-a977-a3b86fab72f3"> |
 
 | Photo Pins | Encrypted Chat |
 |---|---|
